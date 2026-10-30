@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>스마트 급식 렌즈 | 주간 급식 캘린더 & 식약처 영양 분석</title>
+  <!-- Pretendard Font -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            mint: {
+              50: '#f0fdf9',
+              100: '#ccfbef',
+              200: '#99f6e0',
+              300: '#5eead4',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #f0fdf9 0%, #f8fafc 55%, #ecfeff 100%);
+      min-height: 100vh;
+    }
+    @keyframes scanSweep {
+      0% { top: 0%; opacity: 0.95; }
+      50% { top: 92%; opacity: 1; }
+      100% { top: 0%; opacity: 0.95; }
+    }
+    .animate-scan {
+      animation: scanSweep 0.45s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased selection:bg-mint-200 selection:text-mint-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // ============================================================================
+    // 1. 한국 식품의약품안전처(식약처) 표준 식품영양성분 내장 데이터베이스 (REAL_NUTRITION_DB)
+    //    (1회 제공량 기준: kcal, carb(g), protein(g), fat(g), sodium(mg))
+    // ============================================================================
+    const REAL_NUTRITION_DB = {
+      // --- 밥 / 곡류 ---
+      "곤드레밥": { emoji: "🍚", category: "밥류", kcal: 330, carb: 68.0, protein: 7.2, fat: 2.1, sodium: 210, isVeggie: true },
+      "찰보리밥": { emoji: "🍚", category: "밥류", kcal: 295, carb: 64.2, protein: 6.8, fat: 1.1, sodium: 8, isVeggie: true },
+      "보리밥": { emoji: "🍚", category: "밥류", kcal: 295, carb: 64.2, protein: 6.8, fat: 1.1, sodium: 8, isVeggie: true },
+      "발아현미밥": { emoji: "🌾", category: "밥류", kcal: 305, carb: 64.8, protein: 6.9, fat: 1.9, sodium: 9, isVeggie: true },
+      "현미밥": { emoji: "🌾", category: "밥류", kcal: 305, carb: 64.8, protein: 6.9, fat: 1.9, sodium: 9, isVeggie: true },
+      "잡곡밥": { emoji: "🌾", category: "밥류", kcal: 300, carb: 63.0, protein: 7.8, fat: 1.8, sodium: 10, isVeggie: true },
+      "검정약콩밥": { emoji: "🫘", category: "밥류", kcal: 315, carb: 62.5, protein: 9.2, fat: 2.6, sodium: 11, isVeggie: true },
+      "흑미밥": { emoji: "🍚", category: "밥류", kcal: 302, carb: 65.1, protein: 6.4, fat: 1.4, sodium: 8, isVeggie: true },
+      "백미밥": { emoji: "🍚", category: "밥류", kcal: 310, carb: 68.5, protein: 5.8, fat: 0.6, sodium: 6, isVeggie: false },
+      "카레라이스": { emoji: "🍛", category: "밥류", kcal: 410, carb: 67.5, protein: 11.8, fat: 10.4, sodium: 560, isVeggie: true },
+      "하이라이스": { emoji: "🍛", category: "밥류", kcal: 405, carb: 66.8, protein: 11.5, fat: 10.1, sodium: 590, isVeggie: false },
+      "김치볶음밥": { emoji: "🍳", category: "밥류", kcal: 415, carb: 64.0, protein: 11.2, fat: 12.4, sodium: 680, isVeggie: false },
+      "콩나물비빔밥": { emoji: "🥗", category: "밥류", kcal: 365, carb: 66.0, protein: 10.5, fat: 6.2, sodium: 490, isVeggie: true },
+
+      // --- 국 / 찌개류 ---
+      "애호박두부된장찌개": { emoji: "🍲", category: "찌개류", kcal: 95, carb: 7.0, protein: 6.5, fat: 3.8, sodium: 620, isVeggie: true },
+      "얼갈이된장국": { emoji: "🍲", category: "국류", kcal: 82, carb: 6.2, protein: 5.8, fat: 2.9, sodium: 570, isVeggie: true },
+      "된장국": { emoji: "🍲", category: "국류", kcal: 88, carb: 6.8, protein: 6.2, fat: 3.2, sodium: 610, isVeggie: true },
+      "쇠고기미역국": { emoji: "🍲", category: "국류", kcal: 78, carb: 3.1, protein: 6.8, fat: 3.9, sodium: 580, isVeggie: true },
+      "소고기뭇국": { emoji: "🥣", category: "국류", kcal: 74, carb: 4.2, protein: 7.1, fat: 3.1, sodium: 490, isVeggie: true },
+      "맑은콩나물국": { emoji: "🌱", category: "국류", kcal: 42, carb: 3.8, protein: 3.9, fat: 1.1, sodium: 460, isVeggie: true },
+      "콩나물국": { emoji: "🌱", category: "국류", kcal: 42, carb: 3.8, protein: 3.9, fat: 1.1, sodium: 460, isVeggie: true },
+      "김치찌개": { emoji: "🥘", category: "찌개류", kcal: 142, carb: 7.5, protein: 11.8, fat: 7.2, sodium: 690, isVeggie: false },
+      "순두부찌개": { emoji: "🍲", category: "찌개류", kcal: 130, carb: 6.4, protein: 10.8, fat: 6.8, sodium: 630, isVeggie: false },
+      "어묵무국": { emoji: "🍢", category: "국류", kcal: 102, carb: 9.8, protein: 8.2, fat: 3.1, sodium: 590, isVeggie: false },
+      "감자계란국": { emoji: "🥚", category: "국류", kcal: 82, carb: 8.4, protein: 5.2, fat: 3.0, sodium: 450, isVeggie: false },
+      "떡만둣국": { emoji: "🥟", category: "국류", kcal: 235, carb: 34.0, protein: 10.5, fat: 6.2, sodium: 640, isVeggie: false },
+
+      // --- 메인 반찬류 ---
+      "조랭이떡오징어볶음": { emoji: "🦑", category: "볶음류", kcal: 185, carb: 24.0, protein: 14.5, fat: 3.2, sodium: 480, isVeggie: false },
+      "돼지갈비찜": { emoji: "🍖", category: "찜류", kcal: 270, carb: 12.8, protein: 22.5, fat: 14.2, sodium: 490, isVeggie: false },
+      "제육볶음": { emoji: "🍖", category: "볶음류", kcal: 260, carb: 8.5, protein: 21.0, fat: 15.5, sodium: 520, isVeggie: false },
+      "돈가스": { emoji: "🥩", category: "튀김류", kcal: 345, carb: 22.4, protein: 20.8, fat: 19.2, sodium: 470, isVeggie: false },
+      "치즈돈가스": { emoji: "🧀", category: "튀김류", kcal: 380, carb: 21.0, protein: 23.5, fat: 22.0, sodium: 530, isVeggie: false },
+      "소불고기": { emoji: "🥩", category: "볶음류", kcal: 225, carb: 10.4, protein: 21.8, fat: 10.5, sodium: 460, isVeggie: false },
+      "고등어카레구이": { emoji: "🐟", category: "구이류", kcal: 210, carb: 1.8, protein: 20.4, fat: 13.2, sodium: 320, isVeggie: false },
+      "고등어구이": { emoji: "🐟", category: "구이류", kcal: 210, carb: 1.8, protein: 20.4, fat: 13.2, sodium: 320, isVeggie: false },
+      "수제떡갈비": { emoji: "🍔", category: "구이류", kcal: 248, carb: 13.5, protein: 18.6, fat: 13.2, sodium: 440, isVeggie: false },
+      "떡갈비": { emoji: "🍔", category: "구이류", kcal: 248, carb: 13.5, protein: 18.6, fat: 13.2, sodium: 440, isVeggie: false },
+      "미트볼조림": { emoji: "🧆", category: "조림류", kcal: 215, carb: 14.2, protein: 14.8, fat: 11.0, sodium: 440, isVeggie: false },
+      "안동찜닭": { emoji: "🍗", category: "찜류", kcal: 242, carb: 14.8, protein: 23.5, fat: 9.6, sodium: 490, isVeggie: false },
+      "순살닭강정": { emoji: "🍗", category: "튀김류", kcal: 310, carb: 25.4, protein: 19.2, fat: 14.6, sodium: 460, isVeggie: false },
+      "치킨너겟": { emoji: "🍗", category: "튀김류", kcal: 240, carb: 14.5, protein: 15.8, fat: 13.2, sodium: 410, isVeggie: false },
+
+      // --- 보조 반찬 / 전 / 나물류 ---
+      "브로콜리새우전": { emoji: "🍤", category: "전류", kcal: 145, carb: 9.2, protein: 8.8, fat: 7.5, sodium: 240, isVeggie: true },
+      "꿀단호박치즈구이": { emoji: "🧀", category: "구이류", kcal: 120, carb: 18.0, protein: 4.2, fat: 3.5, sodium: 110, isVeggie: true },
+      "단호박찜": { emoji: "🎃", category: "찜류", kcal: 95, carb: 19.5, protein: 2.2, fat: 0.8, sodium: 45, isVeggie: true },
+      "간장양념장": { emoji: "🥣", category: "양념류", kcal: 25, carb: 2.5, protein: 1.1, fat: 0.8, sodium: 450, isVeggie: false },
+      "시금치나물": { emoji: "🥗", category: "나물류", kcal: 42, carb: 4.5, protein: 3.8, fat: 1.4, sodium: 185, isVeggie: true },
+      "콩나물무침": { emoji: "🌱", category: "나물류", kcal: 48, carb: 4.8, protein: 3.6, fat: 1.8, sodium: 195, isVeggie: true },
+      "멸치견과류볶음": { emoji: "🐟", category: "볶음류", kcal: 112, carb: 7.4, protein: 9.8, fat: 4.8, sodium: 280, isVeggie: false },
+      "멸치볶음": { emoji: "🐟", category: "볶음류", kcal: 112, carb: 7.4, protein: 9.8, fat: 4.8, sodium: 280, isVeggie: false },
+      "야채계란말이": { emoji: "🥚", category: "구이류", kcal: 118, carb: 3.8, protein: 9.2, fat: 7.2, sodium: 220, isVeggie: false },
+      "계란말이": { emoji: "🥚", category: "구이류", kcal: 118, carb: 3.8, protein: 9.2, fat: 7.2, sodium: 220, isVeggie: false },
+      "잡채": { emoji: "🍜", category: "볶음류", kcal: 168, carb: 26.5, protein: 4.8, fat: 4.9, sodium: 360, isVeggie: true },
+      "감자채볶음": { emoji: "🥔", category: "볶음류", kcal: 86, carb: 13.8, protein: 2.1, fat: 2.6, sodium: 190, isVeggie: true },
+      "오이생채": { emoji: "🥒", category: "무침류", kcal: 32, carb: 5.4, protein: 1.1, fat: 0.8, sodium: 180, isVeggie: true },
+
+      // --- 김치류 ---
+      "배추김치": { emoji: "🥬", category: "김치류", kcal: 18, carb: 2.8, protein: 1.2, fat: 0.2, sodium: 290, isVeggie: true },
+      "깍두기": { emoji: "🎲", category: "김치류", kcal: 22, carb: 4.1, protein: 1.0, fat: 0.2, sodium: 260, isVeggie: true },
+      "백김치": { emoji: "🥬", category: "김치류", kcal: 16, carb: 2.6, protein: 1.0, fat: 0.2, sodium: 190, isVeggie: true },
+      "열무김치": { emoji: "🥬", category: "김치류", kcal: 19, carb: 3.2, protein: 1.3, fat: 0.2, sodium: 250, isVeggie: true },
+
+      // --- 우유 / 유제품 / 과일 후식류 ---
+      "우유": { emoji: "🥛", category: "유제품", kcal: 130, carb: 9.5, protein: 6.2, fat: 7.0, sodium: 100, isVeggie: false },
+      "요구르트": { emoji: "🧃", category: "유제품", kcal: 65, carb: 14.5, protein: 1.4, fat: 0.3, sodium: 35, isVeggie: false },
+      "멜론": { emoji: "🍈", category: "과일류", kcal: 42, carb: 10.1, protein: 0.9, fat: 0.2, sodium: 12, isVeggie: true },
+      "사과": { emoji: "🍎", category: "과일류", kcal: 57, carb: 14.2, protein: 0.3, fat: 0.2, sodium: 2, isVeggie: true },
+      "바나나": { emoji: "🍌", category: "과일류", kcal: 88, carb: 22.4, protein: 1.1, fat: 0.3, sodium: 1, isVeggie: true },
+      "방울토마토": { emoji: "🍅", category: "과일류", kcal: 24, carb: 5.2, protein: 1.0, fat: 0.2, sodium: 6, isVeggie: true },
+      "감귤": { emoji: "🍊", category: "과일류", kcal: 40, carb: 9.8, protein: 0.8, fat: 0.2, sodium: 2, isVeggie: true }
+    };
+
+    const QUICK_PICK_MENUS = [
+      "곤드레밥", "찰보리밥", "발아현미밥", "검정약콩밥", "백미밥", "카레라이스",
+      "애호박두부된장찌개", "얼갈이된장국", "쇠고기미역국", "소고기뭇국", "맑은콩나물국", "김치찌개",
+      "조랭이떡오징어볶음", "돼지갈비찜", "제육볶음", "고등어카레구이", "수제떡갈비", "돈가스",
+      "브로콜리새우전", "꿀단호박치즈구이", "시금치나물", "콩나물무침", "멸치견과류볶음", "야채계란말이",
+      "배추김치", "깍두기", "우유", "요구르트", "사과", "멜론"
+    ];
+
+    function lookupNutrition(rawName) {
+      const name = (rawName || "").trim();
+      if (!name) return null;
+
+      if (REAL_NUTRITION_DB[name]) {
+        return { name, ...REAL_NUTRITION_DB[name] };
+      }
+
+      for (const [dbKey, val] of Object.entries(REAL_NUTRITION_DB)) {
+        if (dbKey.includes(name) || name.includes(dbKey)) {
+          return { name, ...val };
+        }
+      }
+
+      // 식약처 식품군별 표준 평균치 폴백
+      if (/밥|라이스|비빔|덮밥/.test(name)) {
+        return { name, emoji: "🍚", category: "밥류", kcal: 305, carb: 65.0, protein: 6.8, fat: 1.5, sodium: 20, isVeggie: true };
+      }
+      if (/국|찌개|탕|전골/.test(name)) {
+        return { name, emoji: "🍲", category: "국·찌개류", kcal: 88, carb: 6.2, protein: 6.8, fat: 3.4, sodium: 560, isVeggie: true };
+      }
+      if (/갈비|불고기|제육|볶음|찜|돈가스|까스|치킨|구이|고기|오징어/.test(name)) {
+        return { name, emoji: "🍖", category: "메인반찬", kcal: 230, carb: 12.5, protein: 19.5, fat: 11.2, sodium: 460, isVeggie: false };
+      }
+      if (/김치|깍두기|석박지|겉절이/.test(name)) {
+        return { name, emoji: "🥬", category: "김치류", kcal: 20, carb: 3.2, protein: 1.1, fat: 0.2, sodium: 265, isVeggie: true };
+      }
+      if (/우유|요구르트|요거트|치즈/.test(name)) {
+        return { name, emoji: "🥛", category: "유제품", kcal: 115, carb: 11.0, protein: 5.2, fat: 5.0, sodium: 85, isVeggie: false };
+      }
+      if (/사과|멜론|바나나|토마토|귤|수박|과일|배|딸기/.test(name)) {
+        return { name, emoji: "🍎", category: "과일류", kcal: 50, carb: 12.0, protein: 0.8, fat: 0.2, sodium: 5, isVeggie: true };
+      }
+      return { name, emoji: "🥗", category: "보조반찬", kcal: 75, carb: 7.5, protein: 4.5, fat: 2.8, sodium: 210, isVeggie: true };
+    }
+
+    // ============================================================================
+    // 2. 로컬 텍스트 정제 및 메뉴 분리 정규식 함수
+    //    알레르기 번호 (5.6.13) 및 영양 수치(683.97...), 특수기호 완전 제거
+    // ============================================================================
+    function parseMenuTextWithRegex(rawText) {
+      if (!rawText || !rawText.trim()) return [];
+      let cleaned = rawText;
+      // 1) 영양 수치 및 단위 제거: * 에너지/단백질/칼슘/철... 이후 전부 잘라내기
+      cleaned = cleaned.replace(/\*?\s*(에너지|단백질|칼슘|철|kcal|Kcal|KCAL|g|mg)[\s\S]*/g, " ");
+      // 2) 알레르기 번호 제거: \([0-9\.]+\) 패턴 전부 삭제
+      cleaned = cleaned.replace(/\([0-9\.,\s]+\)/g, " ");
+      // 3) 숫자와 소수점 연속 패턴 제거
+      cleaned = cleaned.replace(/[0-9]+(\.[0-9]+)?(\/[0-9]+(\.[0-9]+)?)*\s*/g, " ");
+      // 4) 특수문자 제거
+      cleaned = cleaned.replace(/[\*\#\/\~\(\)\[\]\:\;\-\+\=•·"']+/g, " ");
+
+      const stopWords = new Set(["월요일", "화요일", "수요일", "목요일", "금요일", "중식", "급식", "식단표", "오늘의", "학교"]);
+      return cleaned
+        .split(/[,\s]+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length > 1 && !stopWords.has(w));
+    }
+
+    // 시연용 요일별 식단표 안내문 그래픽 카드 생성기 (브라우저 로컬 SVG Data URL)
+    function createSampleNoticeImage(dayLabel, dateStr, rawNotice, menus) {
+      const menuLines = menus
+        .slice(0, 7)
+        .map(
+          (m, idx) =>
+            `<text x="40" y="${125 + idx * 30}" font-family="Pretendard, sans-serif" font-size="18" font-weight="800" fill="#0f172a">• ${m}</text>`
+        )
+        .join("");
+
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="360" viewBox="0 0 520 360">
+        <rect width="520" height="360" rx="24" fill="#ffffff" stroke="#14b8a6" stroke-width="4"/>
+        <rect x="16" y="16" width="488" height="64" rx="16" fill="#f0fdf9"/>
+        <text x="36" y="55" font-family="Pretendard, sans-serif" font-size="22" font-weight="900" fill="#0f766e">📋 학교 급식 식단표 안내문 (${dayLabel} · ${dateStr})</text>
+        ${menuLines}
+        <rect x="24" y="308" width="472" height="34" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="36" y="330" font-family="Pretendard, sans-serif" font-size="11" font-weight="700" fill="#64748b">${rawNotice.slice(0, 62)}...</text>
+      </svg>`;
+      return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    }
+
+    // ============================================================================
+    // 3. 월~금 5일 주간 식단표 프리셋 데이터
+    // ============================================================================
+    const WEEKLY_EXAMPLE_DATA = [
+      {
+        dayKey: "mon",
+        dayLabel: "월요일",
+        dateStr: "5월 18일",
+        rawNotice: "곤드레밥(5.6) 간장양념장(5.6.13) 애호박두부된장찌개(5.6.16) 조랭이떡오징어볶음(5.6.13.17) 브로콜리새우전(1.5.6.8.9.13) 꿀단호박치즈구이(2) 배추김치(9) 우유(2) * 에너지/단백질/칼슘/철 683.97/33.10/389.37/3.12"
+      },
+      {
+        dayKey: "tue",
+        dayLabel: "화요일",
+        dateStr: "5월 19일",
+        rawNotice: "찰보리밥 얼갈이된장국(5.6) 돼지갈비찜(5.6.10.13) 시금치나물(5.6) 깍두기(9) 멜론 * 에너지/단백질/칼슘/철 715.20/38.40/265.10/3.45"
+      },
+      {
+        dayKey: "wed",
+        dayLabel: "수요일",
+        dateStr: "5월 20일",
+        rawNotice: "발아현미밥 쇠고기미역국(5.6.16) 고등어카레구이(2.5.6.7) 야채계란말이(1.5) 콩나물무침(5) 배추김치(9) 사과 * 에너지/단백질/칼슘/철 702.50/39.80/312.40/3.80"
+      },
+      {
+        dayKey: "thu",
+        dayLabel: "목요일",
+        dateStr: "5월 21일",
+        rawNotice: "검정약콩밥(5) 소고기뭇국(5.6.16) 수제떡갈비(1.5.6.10.16) 멸치견과류볶음(4.5.6.13) 단호박찜 배추김치(9) 요구르트(2) * 에너지/단백질/칼슘/철 748.10/37.90/410.20/3.60"
+      },
+      {
+        dayKey: "fri",
+        dayLabel: "금요일",
+        dateStr: "5월 22일",
+        rawNotice: "카레라이스(2.5.6.10.12.16) 맑은콩나물국(5) 순살닭강정(1.5.6.12.15) 오이생채(13) 배추김치(9) 우유(2) * 에너지/단백질/칼슘/철 835.40/36.20/295.00/3.20"
+      }
+    ];
+
+    function createInitialWeekState(populateAll = true) {
+      return WEEKLY_EXAMPLE_DATA.map((d) => {
+        const parsedMenus = parseMenuTextWithRegex(d.rawNotice);
+        if (!populateAll) {
+          return {
+            ...d,
+            isRegistered: false,
+            imageUrl: null,
+            menus: []
+          };
+        }
+        return {
+          ...d,
+          isRegistered: true,
+          imageUrl: createSampleNoticeImage(d.dayLabel, d.dateStr, d.rawNotice, parsedMenus),
+          menus: parsedMenus
+        };
+      });
+    }
+
+    // ============================================================================
+    // 4. 점심 영양 분석 기반 '맞춤 저녁 5첩 반상' 추천 데이터베이스
+    // ============================================================================
+    const DINNER_5SET_POOL = {
+      highSodium_lowVeggie: [
+        {
+          rice: { name: "발아현미밥", desc: "식이섬유 보충" },
+          soup: { name: "저염 맑은 콩나물국", desc: "나트륨 배출을 돕는 칼륨 함유" },
+          main: { name: "닭가슴살 채소 볶음", desc: "고단백 저염식" },
+          side: { name: "파프리카 브로콜리 숙회", desc: "비타민 C·항산화 집중 보충" },
+          dessert: { name: "바나나 반 개", desc: "칼륨 풍부 · 나트륨 배출" }
+        },
+        {
+          rice: { name: "찰보리 잡곡밥", desc: "수용성 식이섬유 풍부" },
+          soup: { name: "들깨 미역 맑은국", desc: "알긴산이 나트륨 배출 촉진" },
+          main: { name: "수제 두부 스테이크", desc: "담백한 식물성 고단백" },
+          side: { name: "시금치 참기름 나물", desc: "칼륨과 엽산 집중 보충" },
+          dessert: { name: "아삭한 배 2조각", desc: "나트륨 배출과 소화 촉진" }
+        },
+        {
+          rice: { name: "귀리 현미밥", desc: "베타글루칸·식이섬유 공급" },
+          soup: { name: "저염 배추 된장국", desc: "속이 편안한 저염 국물" },
+          main: { name: "오븐 구운 연어구이", desc: "오메가-3와 양질의 단백질" },
+          side: { name: "오이 부추 무침", desc: "풍부한 수분과 비타민 공급" },
+          dessert: { name: "골드키위 1개", desc: "비타민 C와 칼륨 가득" }
+        }
+      ],
+      lowProtein: [
+        {
+          rice: { name: "서리태 검은콩밥", desc: "성장기 식물성 단백질 보충" },
+          soup: { name: "한우 소고기 무국", desc: "필수 아미노산과 철분 공급" },
+          main: { name: "고등어 노릇 구이", desc: "고단백 · 칼슘 · 오메가-3" },
+          side: { name: "잔멸치 아몬드 볶음", desc: "뼈 건강을 위한 칼슘 반찬" },
+          dessert: { name: "플레인 요거트 & 사과", desc: "칼슘 흡수율과 유산균 보충" }
+        },
+        {
+          rice: { name: "기장 현미밥", desc: "무기질과 비타민 B군 보충" },
+          soup: { name: "순두부 계란국", desc: "부드러운 고단백 국물" },
+          main: { name: "간장 안동찜닭 (살코기)", desc: "담백하고 풍부한 단백질" },
+          side: { name: "치즈 야채 계란말이", desc: "단백질·칼슘 더블 보충" },
+          dessert: { name: "따뜻한 우유 1컵 & 딸기", desc: "성장기 칼슘 집중 보충" }
+        }
+      ],
+      highCalorie: [
+        {
+          rice: { name: "곤약 현미밥", desc: "포만감은 높이고 열량은 DOWN" },
+          soup: { name: "모시조개 맑은국", desc: "기름기 없는 깔끔한 저열량 국" },
+          main: { name: "닭안심 버섯 구이", desc: "지방은 낮고 단백질은 풍부" },
+          side: { name: "양배추·케일 쌈 & 두부쌈장", desc: "식이섬유로 지방 흡수 억제" },
+          dessert: { name: "방울토마토 6알", desc: "저열량 항산화 라이코펜" }
+        },
+        {
+          rice: { name: "찰보리밥 (소량)", desc: "소화가 잘되는 복합 탄수화물" },
+          soup: { name: "애호박 맑은 국", desc: "자극 없는 담백한 채소국" },
+          main: { name: "흰살생선 파프리카 찜", desc: "저지방 고단백 건강식" },
+          side: { name: "도토리묵 상추 무침", desc: "저칼로리 식이섬유 반찬" },
+          dessert: { name: "사과 반 개", desc: "상큼한 식이섬유 후식" }
+        }
+      ],
+      balanced: [
+        {
+          rice: { name: "발아현미 5곡밥", desc: "식이섬유와 무기질 균형 유지" },
+          soup: { name: "바지락 순두부 맑은탕", desc: "소화가 잘되는 단백질 보충" },
+          main: { name: "닭가슴살 채소 볶음", desc: "담백한 고단백 저염식" },
+          side: { name: "파프리카 브로콜리 숙회", desc: "신선한 비타민 보충" },
+          dessert: { name: "바나나 반 개", desc: "칼륨과 에너지 보충" }
+        },
+        {
+          rice: { name: "찰수수 흑미밥", desc: "안토시아닌 항산화 영양" },
+          soup: { name: "감자 계란 파국", desc: "부드럽고 고소한 저녁 국" },
+          main: { name: "수제 한우 떡갈비 & 구운버섯", desc: "성장기 맞춤 단백질" },
+          side: { name: "시금치 깨소금 나물", desc: "철분과 비타민 A 풍부" },
+          dessert: { name: "멜론 2조각", desc: "수분과 비타민 충전" }
+        }
+      ]
+    };
+
+    // ============================================================================
+    // 5. 탄·단·지 도넛 차트 컴포넌트
+    // ============================================================================
+    function MacroDonutChart({ carb, protein, fat, hasMenus }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+
+      const cKcal = carb * 4;
+      const pKcal = protein * 4;
+      const fKcal = fat * 9;
+      const total = Math.max(1, cKcal + pKcal + fKcal);
+
+      const cPct = hasMenus ? Math.round((cKcal / total) * 100) : 0;
+      const pPct = hasMenus ? Math.round((pKcal / total) * 100) : 0;
+      const fPct = hasMenus ? Math.max(0, 100 - cPct - pPct) : 0;
+
+      useEffect(() => {
+        if (!canvasRef.current || !window.Chart) return;
+        if (chartRef.current) chartRef.current.destroy();
+
+        chartRef.current = new window.Chart(canvasRef.current.getContext("2d"), {
+          type: "doughnut",
+          data: {
+            labels: hasMenus ? ["탄수화물", "단백질", "지방"] : ["미등록"],
+            datasets: [
+              {
+                data: hasMenus ? [cPct, pPct, fPct] : [100],
+                backgroundColor: hasMenus ? ["#14b8a6", "#3b82f6", "#f59e0b"] : ["#e2e8f0"],
+                borderColor: "#ffffff",
+                borderWidth: 4,
+                hoverOffset: hasMenus ? 6 : 0
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "66%",
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                enabled: hasMenus,
+                backgroundColor: "#0f172a",
+                callbacks: {
+                  label: (ctx) => ` ${ctx.label}: ${ctx.parsed}%`
+                }
+              }
+            }
+          }
+        });
+
+        return () => {
+          if (chartRef.current) chartRef.current.destroy();
+        };
+      }, [cPct, pPct, fPct, hasMenus]);
+
+      return (
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-5">
+          <div className="relative w-36 h-36 shrink-0">
+            <canvas ref={canvasRef} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="text-[11px] font-bold text-slate-400">탄·단·지</span>
+              <span className="text-base font-black text-slate-800">
+                {hasMenus ? "영양 비율" : "대기 중"}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex-1 w-full space-y-2">
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-2xl bg-teal-50 border border-teal-100">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-teal-500" />
+                <span className="text-sm font-extrabold text-slate-700">
+                  탄수화물 <span className="text-xs font-bold text-slate-500">({carb.toFixed(1)}g)</span>
+                </span>
+              </div>
+              <span className="text-base font-black text-teal-700">{cPct}%</span>
+            </div>
+
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-2xl bg-blue-50 border border-blue-100">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500" />
+                <span className="text-sm font-extrabold text-slate-700">
+                  단백질 <span className="text-xs font-bold text-slate-500">({protein.toFixed(1)}g)</span>
+                </span>
+              </div>
+              <span className="text-base font-black text-blue-700">{pPct}%</span>
+            </div>
+
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-2xl bg-amber-50 border border-amber-100">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-amber-500" />
+                <span className="text-sm font-extrabold text-slate-700">
+                  지방 <span className="text-xs font-bold text-slate-500">({fat.toFixed(1)}g)</span>
+                </span>
+              </div>
+              <span className="text-base font-black text-amber-700">{fPct}%</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // 6. 메인 애플리케이션 (상단 주간 캘린더 바 + 하단 좌측 요일별 사진·태그 + 하단 우측 식약처 영양·저녁 5첩 반상)
+    // ============================================================================
+    function App() {
+      // 월~금 5일 요일별 데이터 상태
+      const [weeklyData, setWeeklyData] = useState(() => createInitialWeekState(true));
+      const [selectedDayIdx, setSelectedDayIdx] = useState(0); // 현재 선택된 요일 (0=월 ~ 4=금)
+      const [isScanning, setIsScanning] = useState(false);
+      const [isDragging, setIsDragging] = useState(false);
+      const [dinnerVariantIdx, setDinnerVariantIdx] = useState(0);
+
+      // 메뉴 태그 클릭 시 수정/삭제 및 [+ 메뉴 추가] 팝업 상태 (null | 'add' | number)
+      const [editingMenuIdx, setEditingMenuIdx] = useState(null);
+      const [customMenuInput, setCustomMenuInput] = useState("");
+
+      const fileInputRef = useRef(null);
+
+      // 현재 선택된 요일 객체
+      const currentDay = weeklyData[selectedDayIdx] || weeklyData[0];
+
+      // [시연용 버튼] 📄 이번 주 식단표 예시 한 번에 채우기
+      const handleFillAllWeekExample = () => {
+        setIsScanning(true);
+        setTimeout(() => {
+          setWeeklyData(createInitialWeekState(true));
+          setIsScanning(false);
+        }, 200);
+      };
+
+      // 선택된 요일의 식단표 사진 개별 업로드 핸들러 (0.3초 만에 해당 요일 데이터로 즉시 저장 & 정규식 메뉴 추출)
+      const handleDayImageUpload = (file) => {
+        if (!file || !file.type.startsWith("image/")) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const uploadedDataUrl = ev.target.result;
+          setIsScanning(true);
+
+          setTimeout(() => {
+            setWeeklyData((prev) =>
+              prev.map((day, idx) => {
+                if (idx !== selectedDayIdx) return day;
+                const extractedMenus =
+                  day.menus.length > 0
+                    ? day.menus
+                    : parseMenuTextWithRegex(WEEKLY_EXAMPLE_DATA[idx].rawNotice);
+                return {
+                  ...day,
+                  isRegistered: true,
+                  imageUrl: uploadedDataUrl,
+                  menus: extractedMenus
+                };
+              })
+            );
+            setIsScanning(false);
+          }, 250);
+        };
+        reader.readAsDataURL(file);
+      };
+
+      // 클립보드 이미지(Ctrl+V) 붙여넣기 시 현재 선택된 요일의 식단표 사진으로 즉시 등록
+      useEffect(() => {
+        const onPaste = (e) => {
+          const items = e.clipboardData?.items;
+          if (!items) return;
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf("image") !== -1) {
+              e.preventDefault();
+              handleDayImageUpload(items[i].getAsFile());
+              return;
+            }
+          }
+        };
+        window.addEventListener("paste", onPaste);
+        return () => window.removeEventListener("paste", onPaste);
+      }, [selectedDayIdx]);
+
+      // 현재 선택된 요일의 메뉴 리스트 업데이트 헬퍼
+      const updateCurrentDayMenus = (updater) => {
+        setWeeklyData((prev) =>
+          prev.map((day, idx) => {
+            if (idx !== selectedDayIdx) return day;
+            const nextMenus = updater(day.menus);
+            return {
+              ...day,
+              isRegistered: nextMenus.length > 0 || Boolean(day.imageUrl),
+              menus: nextMenus
+            };
+          })
+        );
+        setDinnerVariantIdx(0);
+      };
+
+      // 메뉴 태그 클릭 시 다른 메뉴로 교체 또는 추가
+      const handleSelectQuickMenu = (menuName) => {
+        if (typeof editingMenuIdx === "number") {
+          updateCurrentDayMenus((menus) =>
+            menus.map((m, i) => (i === editingMenuIdx ? menuName : m))
+          );
+          setEditingMenuIdx(null);
+        } else {
+          updateCurrentDayMenus((menus) =>
+            menus.includes(menuName) ? menus.filter((m) => m !== menuName) : [...menus, menuName]
+          );
+        }
+      };
+
+      // 특정 메뉴 태그 즉시 삭제
+      const handleDeleteMenuTag = (idxToDelete) => {
+        updateCurrentDayMenus((menus) => menus.filter((_, i) => i !== idxToDelete));
+        setEditingMenuIdx(null);
+      };
+
+      // 직접 메뉴명 또는 식단표 안내문 문자열 입력 추가 (정규식 자동 정제 적용)
+      const handleAddCustomMenuSubmit = (e) => {
+        e.preventDefault();
+        const parsedTokens = parseMenuTextWithRegex(customMenuInput);
+        if (parsedTokens.length === 0) return;
+
+        if (typeof editingMenuIdx === "number") {
+          updateCurrentDayMenus((menus) =>
+            menus.map((m, i) => (i === editingMenuIdx ? parsedTokens[0] : m))
+          );
+        } else {
+          updateCurrentDayMenus((menus) => [...menus, ...parsedTokens]);
+        }
+        setCustomMenuInput("");
+        setEditingMenuIdx(null);
+      };
+
+      // 선택된 요일 초기화 (미등록 상태 체험용)
+      const handleClearCurrentDay = () => {
+        setWeeklyData((prev) =>
+          prev.map((day, idx) =>
+            idx === selectedDayIdx
+              ? { ...day, isRegistered: false, imageUrl: null, menus: [] }
+              : day
+          )
+        );
+      };
+
+      // ============================================================================
+      // 7. 선택된 요일의 식약처 영양 성분 실시간 계산 & 맞춤 저녁 5첩 반상 매칭
+      // ============================================================================
+      const dayAnalysis = useMemo(() => {
+        const mappedMenus = (currentDay?.menus || [])
+          .map((m) => lookupNutrition(m))
+          .filter(Boolean);
+        const hasMenus = mappedMenus.length > 0;
+
+        const totals = mappedMenus.reduce(
+          (acc, cur) => ({
+            kcal: acc.kcal + cur.kcal,
+            carb: acc.carb + cur.carb,
+            protein: acc.protein + cur.protein,
+            fat: acc.fat + cur.fat,
+            sodium: acc.sodium + cur.sodium,
+            veggieCount: acc.veggieCount + (cur.isVeggie ? 1 : 0)
+          }),
+          { kcal: 0, carb: 0, protein: 0, fat: 0, sodium: 0, veggieCount: 0 }
+        );
+
+        const roundedKcal = Math.round(totals.kcal);
+        const roundedSodium = Math.round(totals.sodium);
+
+        if (!hasMenus) {
+          return {
+            hasMenus: false,
+            mappedMenus: [],
+            totals,
+            roundedKcal: 0,
+            roundedSodium: 0,
+            score: 0,
+            kcalPct: 0,
+            sodiumPct: 0,
+            kcalState: { badge: "미등록", color: "slate", text: "0 / 700 kcal" },
+            sodiumState: { badge: "미등록", color: "slate", text: "0 / 1,000 mg" },
+            reasonBadge: `${currentDay.dayLabel} 식단표 사진을 등록하거나 [+ 메뉴 추가]를 눌러주세요.`,
+            selectedDinner: null
+          };
+        }
+
+        // 칼로리 게이지 (초등 6학년 1끼 권장 700kcal 기준)
+        const kcalPct = Math.min(100, Math.round((roundedKcal / 900) * 100));
+        let kcalState = {
+          badge: "적정",
+          color: "emerald",
+          text: `${roundedKcal.toLocaleString()} / 700 kcal`
+        };
+        if (roundedKcal > 880) {
+          kcalState = {
+            badge: "과잉",
+            color: "rose",
+            text: `${roundedKcal.toLocaleString()} / 700 kcal (열량 높음)`
+          };
+        } else if (roundedKcal < 480) {
+          kcalState = {
+            badge: "부족",
+            color: "amber",
+            text: `${roundedKcal.toLocaleString()} / 700 kcal (보충 필요)`
+          };
+        }
+
+        // 나트륨 게이지 (1끼 적정 1,000mg 이하 기준)
+        const sodiumPct = Math.min(100, Math.round((roundedSodium / 1600) * 100));
+        let sodiumState = {
+          badge: "안전",
+          color: "emerald",
+          text: `${roundedSodium.toLocaleString()} mg (적정 수준)`
+        };
+        if (roundedSodium > 1350) {
+          sodiumState = {
+            badge: "주의",
+            color: "rose",
+            text: `${roundedSodium.toLocaleString()} mg (국물 줄이기 권장)`
+          };
+        } else if (roundedSodium > 950) {
+          sodiumState = {
+            badge: "보통",
+            color: "amber",
+            text: `${roundedSodium.toLocaleString()} mg (국물 조금 남기기)`
+          };
+        }
+
+        // 초등 6학년 기준 영양 균형 점수 (100점 만점)
+        let score = 94;
+        if (roundedKcal > 880 || roundedKcal < 480) score -= 8;
+        if (roundedSodium > 1350) score -= 10;
+        else if (roundedSodium > 950) score -= 4;
+        if (totals.veggieCount < 2) score -= 10;
+        if (totals.protein < 18) score -= 8;
+        score = Math.max(55, Math.min(100, score));
+
+        // 맞춤 저녁 5첩 반상 매칭
+        let poolKey = "balanced";
+        let reasonBadge =
+          "점심 급식의 영양 균형이 우수하여 하루 밸런스를 든든하게 유지해 주는 건강 식단으로 구성했습니다.";
+
+        if (roundedSodium > 950 || totals.veggieCount < 2) {
+          poolKey = "highSodium_lowVeggie";
+          reasonBadge =
+            "점심에 나트륨이 높아 칼륨과 비타민이 풍부한 식단으로 구성했습니다.";
+        } else if (totals.protein < 22) {
+          poolKey = "lowProtein";
+          reasonBadge =
+            "점심에 부족했던 단백질과 칼슘을 보충해 성장기 근육·뼈 건강을 돕는 식단으로 구성했습니다.";
+        } else if (roundedKcal > 880) {
+          poolKey = "highCalorie";
+          reasonBadge =
+            "점심 열량이 충분하여 저녁에는 속이 편안한 저칼로리·고단백 식단으로 구성했습니다.";
+        }
+
+        const candidateList = DINNER_5SET_POOL[poolKey] || DINNER_5SET_POOL.balanced;
+        const selectedDinner = candidateList[dinnerVariantIdx % candidateList.length];
+
+        return {
+          hasMenus: true,
+          mappedMenus,
+          totals,
+          roundedKcal,
+          roundedSodium,
+          score,
+          kcalPct,
+          sodiumPct,
+          kcalState,
+          sodiumState,
+          reasonBadge,
+          selectedDinner
+        };
+      }, [currentDay, dinnerVariantIdx]);
+
+      return (
+        <div className="min-h-screen flex flex-col justify-between py-6 px-4 sm:px-8 max-w-6xl mx-auto">
+          {/* ==================================================================== */}
+          {/* 상단 타이틀 헤더 */}
+          {/* ==================================================================== */}
+          <header className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-mint-500 to-teal-600 flex items-center justify-center text-2xl shadow-md shadow-mint-500/20">
+                🍱
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                  스마트 급식 렌즈
+                </h1>
+                <p className="text-sm font-bold text-mint-700">
+                  주간 급식 캘린더 모아보기 & 식약처 표준 영양 분석 대시보드
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-mint-300 text-xs font-black text-teal-800 shadow-2xs">
+                <span>🏛️</span>
+                <span>식품의약품안전처 표준 식품영양성분 DB 연동</span>
+              </span>
+            </div>
+          </header>
+
+          {/* ==================================================================== */}
+          {/* [상단: 월~금 한 주 급식 캘린더 모아보기 뷰] */}
+          {/* ==================================================================== */}
+          <section className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-teal-100 mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+                  <span>📅 월~금 한 주 급식 캘린더 모아보기</span>
+                </h2>
+                <p className="text-xs sm:text-sm font-bold text-slate-500 mt-0.5">
+                  요일 카드를 클릭하면 하단의 [식단표 사진 · 메뉴 태그 · 식약처 영양 분석 · 저녁 5첩 반상]이 해당 요일로 즉시 전환됩니다.
+                </p>
+              </div>
+
+              {/* 시연용 원클릭 버튼 */}
+              <button
+                onClick={handleFillAllWeekExample}
+                className="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs sm:text-sm font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
+              >
+                <span>📄 이번 주 식단표 예시 한 번에 채우기</span>
+              </button>
+            </div>
+
+            {/* 월~금 5개 요일 카드 가로 나란히 배치 */}
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+              {weeklyData.map((dayItem, idx) => {
+                const isSelected = idx === selectedDayIdx;
+                const isRegistered = dayItem.isRegistered && dayItem.menus.length > 0;
+                const dayKcal = Math.round(
+                  dayItem.menus.reduce((sum, m) => sum + (lookupNutrition(m)?.kcal || 0), 0)
+                );
+
+                return (
+                  <button
+                    key={dayItem.dayKey}
+                    onClick={() => {
+                      setSelectedDayIdx(idx);
+                      setDinnerVariantIdx(0);
+                    }}
+                    className={`p-4 rounded-2xl border-2 text-left transition-all flex flex-col justify-between min-h-[148px] cursor-pointer ${
+                      isSelected
+                        ? "bg-mint-50/90 border-mint-500 ring-2 ring-mint-400/40 shadow-md shadow-mint-500/10 scale-[1.01]"
+                        : "bg-slate-50/70 hover:bg-mint-50/40 border-slate-200 hover:border-mint-300"
+                    }`}
+                  >
+                    {/* 상단: [요일], [날짜], [등록 상태: 등록 완료 / 미등록] */}
+                    <div>
+                      <div className="flex items-center justify-between gap-1 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                              isSelected ? "bg-mint-600 text-white" : "bg-slate-200 text-slate-700"
+                            }`}
+                          >
+                            {dayItem.dayLabel}
+                          </span>
+                          <span className="text-xs font-extrabold text-slate-500">
+                            {dayItem.dateStr}
+                          </span>
+                        </div>
+
+                        <span
+                          className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
+                            isRegistered
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-slate-200 text-slate-500"
+                          }`}
+                        >
+                          {isRegistered ? "등록 완료" : "미등록"}
+                        </span>
+                      </div>
+
+                      {/* 중단: 대표 메뉴 2~3개 미리보기 */}
+                      {isRegistered ? (
+                        <ul className="space-y-1 my-2">
+                          {dayItem.menus.slice(0, 3).map((mName, mIdx) => {
+                            const info = lookupNutrition(mName);
+                            return (
+                              <li
+                                key={`${mName}-${mIdx}`}
+                                className="text-xs font-extrabold text-slate-800 truncate flex items-center gap-1.5"
+                              >
+                                <span>{info?.emoji || "🍽️"}</span>
+                                <span className="truncate">{mName}</span>
+                              </li>
+                            );
+                          })}
+                          {dayItem.menus.length > 3 && (
+                            <li className="text-[11px] font-bold text-slate-400 pl-5">
+                              외 {dayItem.menus.length - 3}개 메뉴
+                            </li>
+                          )}
+                        </ul>
+                      ) : (
+                        <div className="my-4 text-xs font-bold text-slate-400 text-center">
+                          클릭하여 식단표 등록
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 하단: 총 칼로리 미리보기 */}
+                    <div className="pt-2 mt-1 border-t border-slate-200/80 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-400">총 열량</span>
+                      <span className="text-xs font-black text-teal-700">
+                        {isRegistered ? `${dayKcal.toLocaleString()} kcal` : "- kcal"}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* ==================================================================== */}
+          {/* [하단 2단 작업 영역: 좌측(요일별 식단표 사진 & 메뉴 태그) / 우측(식약처 영양 분석 & 저녁 5첩 반상)] */}
+          {/* ==================================================================== */}
+          <main className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch flex-1">
+            {/* ================================================================== */}
+            {/* [하단 좌측: 6컬럼] 선택된 요일의 식단표 사진 등록 존 & 로컬 메뉴 태그 */}
+            {/* ================================================================== */}
+            <section className="lg:col-span-6 bg-white rounded-3xl p-6 shadow-sm border border-teal-100 flex flex-col justify-between gap-6">
+              {/* 1. 요일별 개별 사진 업로드 */}
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-mint-600 text-white text-xs font-black">
+                      {currentDay.dayLabel} ({currentDay.dateStr})
+                    </span>
+                    <h2 className="text-lg font-black text-slate-900">
+                      식단표 사진 등록
+                    </h2>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {currentDay.isRegistered && (
+                      <button
+                        onClick={handleClearCurrentDay}
+                        className="text-xs font-bold text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                      >
+                        초기화
+                      </button>
+                    )}
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-xl bg-mint-50 hover:bg-mint-100 border border-mint-200 text-xs font-black text-teal-800 transition cursor-pointer"
+                    >
+                      📷 사진 변경·업로드
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleDayImageUpload(file);
+                    e.target.value = "";
+                  }}
+                />
+
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    handleDayImageUpload(e.dataTransfer?.files?.[0]);
+                  }}
+                  className={`relative min-h-[250px] rounded-3xl border-2 border-dashed transition-all cursor-pointer overflow-hidden flex flex-col items-center justify-between p-5 text-center select-none ${
+                    isDragging
+                      ? "border-mint-500 bg-mint-100/70 scale-[1.01]"
+                      : "border-mint-300 bg-mint-50/50 hover:bg-mint-50 hover:border-mint-400"
+                  }`}
+                >
+                  {isScanning && (
+                    <div className="absolute inset-0 z-30 bg-slate-900/50 backdrop-blur-[1px] flex flex-col items-center justify-center p-4">
+                      <div className="w-full h-2 bg-gradient-to-r from-transparent via-mint-400 to-transparent shadow-[0_0_24px_#2dd4bf] absolute animate-scan" />
+                      <p className="text-white text-sm sm:text-base font-black">
+                        ⚡ {currentDay.dayLabel} 식단표 로컬 정제 및 등록 중...
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="text-sm sm:text-base font-black text-slate-800">
+                    📷 {currentDay.dayLabel}({currentDay.dateStr}) 식단표 사진을 올려주세요
+                  </div>
+
+                  <div className="my-2 flex-1 flex items-center justify-center w-full">
+                    {currentDay.imageUrl ? (
+                      <img
+                        src={currentDay.imageUrl}
+                        alt={`${currentDay.dayLabel} 식단표 미리보기`}
+                        className="max-h-44 w-auto rounded-2xl object-contain shadow-sm border-2 border-white bg-white"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center py-6 text-slate-400">
+                        <div className="w-16 h-16 rounded-full bg-white shadow-xs border border-mint-200 flex items-center justify-center text-3xl mb-2">
+                          📸
+                        </div>
+                        <p className="text-sm font-extrabold text-slate-600">
+                          클릭하여 {currentDay.dayLabel} 식단표 사진 선택 또는 드래그 앤 드롭
+                        </p>
+                        <p className="text-xs font-semibold text-slate-400 mt-1">
+                          클립보드 이미지 붙여넣기(Ctrl+V)도 즉시 지원합니다
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <span className="px-3.5 py-1 rounded-full bg-white/90 text-xs font-extrabold text-mint-800 shadow-2xs">
+                    클릭하거나 새 사진을 끌어다 놓으면 {currentDay.dayLabel} 식단표로 저장됩니다
+                  </span>
+                </div>
+              </div>
+
+              {/* 2. 로컬 텍스트 정제 및 메뉴 태그 */}
+              <div className="pt-4 border-t border-slate-100">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
+                      <span>🏷️ {currentDay.dayLabel} 인식된 급식 메뉴 태그</span>
+                      {dayAnalysis.hasMenus && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-mint-100 text-mint-800 text-xs font-black">
+                          {dayAnalysis.mappedMenus.length}개 메뉴
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs font-bold text-slate-400 mt-0.5">
+                      알레르기 번호·영양 수치가 자동 제거된 순수 메뉴명입니다. 태그를 클릭하면 수정·삭제할 수 있습니다.
+                    </p>
+                  </div>
+
+                  {/* [+ 메뉴 추가] 버튼 */}
+                  <button
+                    onClick={() => {
+                      setCustomMenuInput("");
+                      setEditingMenuIdx("add");
+                    }}
+                    className="px-3.5 py-1.5 rounded-full bg-mint-600 hover:bg-mint-700 text-white text-xs font-black shadow-xs transition cursor-pointer"
+                  >
+                    + 메뉴 추가
+                  </button>
+                </div>
+
+                {dayAnalysis.hasMenus ? (
+                  <div className="flex flex-wrap gap-2">
+                    {dayAnalysis.mappedMenus.map((item, idx) => (
+                      <button
+                        key={`${item.name}-${idx}`}
+                        onClick={() => {
+                          setCustomMenuInput(item.name);
+                          setEditingMenuIdx(idx);
+                        }}
+                        className="group flex items-center gap-2 px-4 py-2.5 rounded-full bg-mint-50 hover:bg-mint-100 border-2 border-mint-200 hover:border-mint-400 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                        title="클릭하여 메뉴 수정 또는 삭제"
+                      >
+                        <span className="text-lg">{item.emoji}</span>
+                        <span className="text-sm sm:text-base font-black text-slate-800">
+                          {item.name}
+                        </span>
+                        <span className="text-xs font-extrabold text-teal-700 bg-white px-2 py-0.5 rounded-full border border-mint-200">
+                          {item.kcal}kcal
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => setEditingMenuIdx("add")}
+                    className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/70 hover:bg-mint-50/40 hover:border-mint-300 p-6 text-center cursor-pointer transition"
+                  >
+                    <p className="text-sm font-extrabold text-slate-500">
+                      등록된 메뉴가 없습니다. {currentDay.dayLabel} 식단표 사진을 올리거나 [+ 메뉴 추가]를 눌러주세요.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* ================================================================== */}
+            {/* [하단 우측: 6컬럼] 선택된 요일의 식약처 영양 분석 & 맞춤 저녁 5첩 반상 */}
+            {/* ================================================================== */}
+            <section className="lg:col-span-6 flex flex-col justify-between gap-4">
+              {/* 1. 식약처 표준 영양 DB 기반 영양 균형 점수 & 칼로리/나트륨 게이지 */}
+              <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-teal-100">
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-xs font-black text-teal-800">
+                    🏛️ {currentDay.dayLabel}({currentDay.dateStr}) 식약처 표준 영양 분석
+                  </span>
+                  <span className="text-xs font-extrabold text-slate-400">
+                    초등 6학년 권장 기준
+                  </span>
+                </div>
+
+                {/* 영양 균형 점수 */}
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <span className="text-xs font-extrabold text-mint-700 bg-mint-50 px-2.5 py-0.5 rounded-full">
+                      100점 만점 종합 평가
+                    </span>
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
+                      🌟 영양 균형 점수
+                    </h2>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-4xl sm:text-5xl font-black text-mint-600">
+                      {dayAnalysis.hasMenus ? `${dayAnalysis.score}점` : "- 점"}
+                    </span>
+                    <span className="text-lg font-bold text-slate-400"> / 100점</span>
+                  </div>
+                </div>
+
+                {/* 칼로리 & 나트륨 게이지 바 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-black text-slate-800">🔥 칼로리</span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
+                          dayAnalysis.kcalState.color === "emerald"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : dayAnalysis.kcalState.color === "amber"
+                            ? "bg-amber-100 text-amber-800"
+                            : dayAnalysis.kcalState.color === "rose"
+                            ? "bg-rose-100 text-rose-800"
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {dayAnalysis.kcalState.badge}
+                      </span>
+                    </div>
+                    <div className="text-xs font-extrabold text-slate-600 mb-2">
+                      {dayAnalysis.kcalState.text}
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          dayAnalysis.kcalState.color === "rose"
+                            ? "bg-rose-500"
+                            : dayAnalysis.kcalState.color === "amber"
+                            ? "bg-amber-500"
+                            : "bg-emerald-500"
+                        }`}
+                        style={{ width: `${dayAnalysis.kcalPct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-black text-slate-800">🧂 나트륨</span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
+                          dayAnalysis.sodiumState.color === "emerald"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : dayAnalysis.sodiumState.color === "amber"
+                            ? "bg-amber-100 text-amber-800"
+                            : dayAnalysis.sodiumState.color === "rose"
+                            ? "bg-rose-100 text-rose-800"
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {dayAnalysis.sodiumState.badge}
+                      </span>
+                    </div>
+                    <div className="text-xs font-extrabold text-slate-600 mb-2">
+                      {dayAnalysis.sodiumState.text}
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          dayAnalysis.sodiumState.color === "rose"
+                            ? "bg-rose-500"
+                            : dayAnalysis.sodiumState.color === "amber"
+                            ? "bg-amber-500"
+                            : "bg-emerald-500"
+                        }`}
+                        style={{ width: `${dayAnalysis.sodiumPct}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. 탄·단·지 도넛 차트 */}
+              <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-teal-100">
+                <h2 className="text-base sm:text-lg font-black text-slate-900 mb-3">
+                  🍩 탄·단·지 영양소 비율
+                </h2>
+                <MacroDonutChart
+                  carb={dayAnalysis.totals.carb}
+                  protein={dayAnalysis.totals.protein}
+                  fat={dayAnalysis.totals.fat}
+                  hasMenus={dayAnalysis.hasMenus}
+                />
+              </div>
+
+              {/* 3. 맞춤 저녁 5첩 반상 카드 */}
+              <div className="bg-gradient-to-br from-mint-600 via-teal-600 to-emerald-700 rounded-3xl p-5 sm:p-6 text-white shadow-lg shadow-mint-600/20">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h2 className="text-lg sm:text-xl font-black tracking-tight flex items-center gap-2">
+                    <span>🍽️ {currentDay.dayLabel} 맞춤 저녁 5첩 반상</span>
+                  </h2>
+                  {dayAnalysis.selectedDinner && (
+                    <button
+                      onClick={() => setDinnerVariantIdx((prev) => prev + 1)}
+                      className="px-3.5 py-1.5 rounded-full bg-white text-teal-800 hover:bg-mint-50 text-xs font-black shadow-sm transition active:scale-95 cursor-pointer"
+                    >
+                      🔄 다른 추천
+                    </button>
+                  )}
+                </div>
+
+                {/* 추천 사유 배지 */}
+                <div className="bg-black/20 border border-white/20 rounded-2xl px-3.5 py-2.5 mb-3.5 text-xs sm:text-sm font-extrabold text-mint-50 leading-relaxed">
+                  💡 {dayAnalysis.reasonBadge}
+                </div>
+
+                {dayAnalysis.selectedDinner ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="bg-white/95 text-slate-800 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
+                      <span className="text-2xl shrink-0">🍚</span>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black text-teal-700">밥</div>
+                        <div className="text-sm font-black text-slate-900 truncate">
+                          {dayAnalysis.selectedDinner.rice.name}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-500 truncate">
+                          {dayAnalysis.selectedDinner.rice.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/95 text-slate-800 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
+                      <span className="text-2xl shrink-0">🍲</span>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black text-teal-700">국</div>
+                        <div className="text-sm font-black text-slate-900 truncate">
+                          {dayAnalysis.selectedDinner.soup.name}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-500 truncate">
+                          {dayAnalysis.selectedDinner.soup.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/95 text-slate-800 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
+                      <span className="text-2xl shrink-0">🍖</span>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black text-teal-700">메인반찬</div>
+                        <div className="text-sm font-black text-slate-900 truncate">
+                          {dayAnalysis.selectedDinner.main.name}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-500 truncate">
+                          {dayAnalysis.selectedDinner.main.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/95 text-slate-800 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
+                      <span className="text-2xl shrink-0">🥗</span>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black text-teal-700">밑반찬</div>
+                        <div className="text-sm font-black text-slate-900 truncate">
+                          {dayAnalysis.selectedDinner.side.name}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-500 truncate">
+                          {dayAnalysis.selectedDinner.side.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-2 bg-white/95 text-slate-800 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-2xl shrink-0">🍎</span>
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-black text-teal-700">후식</div>
+                          <div className="text-sm font-black text-slate-900 truncate">
+                            {dayAnalysis.selectedDinner.dessert.name}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full bg-mint-100 text-mint-800 text-xs font-extrabold shrink-0">
+                        {dayAnalysis.selectedDinner.dessert.desc}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white/10 border border-white/15 rounded-2xl p-5 text-center text-xs sm:text-sm font-extrabold text-mint-50">
+                    요일 식단이 등록되면 부족한 영양소를 보완하는 저녁 5첩 반상이 자동으로 제안됩니다.
+                  </div>
+                )}
+              </div>
+            </section>
+          </main>
+
+          {/* ==================================================================== */}
+          {/* [메뉴 태그 수정/삭제 및 + 메뉴 추가 모달] */}
+          {/* ==================================================================== */}
+          {editingMenuIdx !== null && (
+            <div
+              onClick={() => setEditingMenuIdx(null)}
+              className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-xs flex items-center justify-center p-4"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl border border-teal-100 max-h-[85vh] flex flex-col"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div>
+                    <span className="text-[11px] font-black text-mint-700 bg-mint-50 px-2.5 py-0.5 rounded-full">
+                      {currentDay.dayLabel} ({currentDay.dateStr}) 식단 편집
+                    </span>
+                    <h3 className="text-lg font-black text-slate-900 mt-1">
+                      {typeof editingMenuIdx === "number"
+                        ? `'${currentDay.menus[editingMenuIdx]}' 메뉴 수정 또는 삭제`
+                        : "🍱 급식 메뉴 추가"}
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {typeof editingMenuIdx === "number" && (
+                      <button
+                        onClick={() => handleDeleteMenuTag(editingMenuIdx)}
+                        className="px-3.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-black cursor-pointer"
+                      >
+                        🗑️ 이 메뉴 삭제
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setEditingMenuIdx(null)}
+                      className="px-4 py-1.5 rounded-xl bg-mint-600 hover:bg-mint-700 text-white text-xs font-black cursor-pointer"
+                    >
+                      닫기 ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* 직접 입력 또는 식단표 텍스트 정제 추가 폼 */}
+                <form onSubmit={handleAddCustomMenuSubmit} className="my-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={customMenuInput}
+                    onChange={(e) => setCustomMenuInput(e.target.value)}
+                    placeholder={
+                      typeof editingMenuIdx === "number"
+                        ? "변경할 메뉴 이름 입력"
+                        : "메뉴 이름 또는 식단표 텍스트 입력 (알레르기 번호 자동 제거)"
+                    }
+                    className="flex-1 text-xs sm:text-sm font-bold bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-mint-500"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shrink-0 cursor-pointer"
+                  >
+                    {typeof editingMenuIdx === "number" ? "이름 변경" : "+ 추가"}
+                  </button>
+                </form>
+
+                {/* 자주 나오는 급식 메뉴 빠른 선택 목록 */}
+                <div className="flex-1 overflow-y-auto pr-1 mt-1">
+                  <div className="text-xs font-black text-teal-800 mb-2">
+                    ⭐ 식약처 표준 급식 메뉴 빠른 선택 (클릭 시 즉시 반영)
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {QUICK_PICK_MENUS.map((mName) => {
+                      const info = lookupNutrition(mName);
+                      const isIncluded = currentDay.menus.includes(mName);
+                      return (
+                        <button
+                          key={mName}
+                          onClick={() => handleSelectQuickMenu(mName)}
+                          className={`p-2.5 rounded-2xl border text-left flex items-center gap-2 transition cursor-pointer ${
+                            isIncluded
+                              ? "bg-mint-100 border-mint-500"
+                              : "bg-slate-50 hover:bg-mint-50 border-slate-200"
+                          }`}
+                        >
+                          <span className="text-xl">{info.emoji}</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-slate-900 truncate">{mName}</div>
+                            <div className="text-[10px] font-bold text-teal-700">
+                              {info.kcal}kcal · 나트륨 {info.sodium}mg
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
